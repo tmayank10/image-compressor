@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk Image Compressor – High Quality, Smaller Size</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .drop-active { border-color: #22c55e !important; background: rgba(34,197,94,0.08); }
+    .progress-bar { transition: width 0.3s ease; }
+    .file-card { transition: all 0.15s ease; }
+    .file-card.selected { border-color: #10b981; background: rgba(16,185,129,0.08); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div class="max-w-5xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <header class="text-center mb-8">
+      <h1 class="text-3xl md:text-4xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+        Bulk Image Compressor
+      </h1>
+      <p class="mt-2 text-slate-400 text-lg">
+        Reduce file size while preserving visual quality
+      </p>
+      <p class="mt-1 text-sm text-slate-500">100% client-side • No uploads • Privacy first</p>
+    </header>
+
+    <!-- Settings Card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-5 shadow-xl">
+      <h2 class="text-lg font-semibold mb-4 text-emerald-400">Compression Settings</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div>
+          <label class="block text-sm text-slate-400 mb-2">
+            Quality: <span id="qualityValue" class="text-emerald-400 font-medium">0.80</span>
+            <span class="text-xs text-slate-500">(0.7–0.9 recommended)</span>
+          </label>
+          <input type="range" id="quality" min="0.1" max="1" step="0.05" value="0.8"
+                 class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-sm text-slate-400 mb-2">Max Width (px)</label>
+          <select id="maxWidth" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="0">Keep original size</option>
+            <option value="3840">4K (3840px)</option>
+            <option value="2560">2K (2560px)</option>
+            <option value="1920" selected>Full HD (1920px)</option>
+            <option value="1280">HD (1280px)</option>
+            <option value="1080">1080px</option>
+            <option value="800">800px</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm text-slate-400 mb-2">Output Format</label>
+          <select id="outputFormat" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="webp" selected>WebP (Best compression)</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG (Lossless)</option>
+            <option value="original">Keep original format</option>
+          </select>
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+        <span class="bg-slate-800 px-2 py-1 rounded">WebP + 0.80 quality typically reduces size by 40–70%</span>
+        <span class="bg-slate-800 px-2 py-1 rounded">Supports 100+ images in a single batch</span>
+      </div>
+    </div>
+
+    <!-- Drop Zone -->
+    <div id="dropZone"
+         class="border-2 border-dashed border-slate-700 rounded-2xl p-10 text-center hover:border-emerald-500/60 transition-all bg-slate-900/50 mb-5">
+      <div class="text-5xl mb-3">📷</div>
+      <p class="text-xl font-medium text-slate-200">Drag & drop images or entire folders</p>
+      <p class="mt-2 text-slate-400 mb-1">Unlimited images supported • JPG, PNG, WebP</p>
+      <p class="text-sm text-emerald-400/90 mb-5">Best for many photos: use <b>Select Folder</b></p>
+      
+      <div class="flex flex-wrap justify-center gap-3">
+        <button type="button" id="selectFolderBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-6 py-2.5 rounded-lg transition">
+          Select Folder
+        </button>
+        <button type="button" id="selectFilesBtn" class="bg-slate-700 hover:bg-slate-600 text-white font-medium px-5 py-2.5 rounded-lg transition">
+          Select Images
+        </button>
+      </div>
+      
+      <input type="file" id="fileInput" multiple accept="image/*" class="hidden" />
+      <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" />
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-wrap gap-2 mb-4 items-center" id="actionBar" style="display:none;">
+      <button id="selectAllBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg transition">
+        Select All
+      </button>
+      <button id="deselectAllBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg transition">
+        Deselect All
+      </button>
+      <button id="compressBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-5 py-2 rounded-lg transition">
+        Compress Selected
+      </button>
+      <button id="downloadZipBtn" class="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-5 py-2 rounded-lg transition hidden">
+        Download ZIP
+      </button>
+      <button id="downloadJpegBtn" class="bg-amber-600 hover:bg-amber-500 text-white font-semibold px-5 py-2 rounded-lg transition hidden">
+        Download as JPEG
+      </button>
+      <button id="clearBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg transition">
+        Clear All
+      </button>
+      <div class="ml-auto text-sm text-slate-400" id="summary"></div>
+    </div>
+
+    <!-- Progress -->
+    <div id="progressContainer" class="mb-5 hidden">
+      <div class="flex justify-between text-sm mb-1">
+        <span id="progressText">Processing...</span>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div class="w-full bg-slate-800 rounded-full h-2.5">
+        <div id="progressBar" class="progress-bar bg-emerald-500 h-2.5 rounded-full" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="space-y-2"></div>
+
+    <footer class="mt-14 text-center text-slate-600 text-sm">
+      <p>All processing happens locally in your browser. Images never leave your device.</p>
+    </footer>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const folderInput = document.getElementById('folderInput');
+    const selectFilesBtn = document.getElementById('selectFilesBtn');
+    const selectFolderBtn = document.getElementById('selectFolderBtn');
+    const qualitySlider = document.getElementById('quality');
+    const qualityValue = document.getElementById('qualityValue');
+    const maxWidthSelect = document.getElementById('maxWidth');
+    const outputFormatSelect = document.getElementById('outputFormat');
+    const compressBtn = document.getElementById('compressBtn');
+    const downloadZipBtn = document.getElementById('downloadZipBtn');
+    const downloadJpegBtn = document.getElementById('downloadJpegBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const deselectAllBtn = document.getElementById('deselectAllBtn');
+    const actionBar = document.getElementById('actionBar');
+    const resultsDiv = document.getElementById('results');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const progressPercent = document.getElementById('progressPercent');
+    const summary = document.getElementById('summary');
+
+    let items = [];
+
+    qualitySlider.addEventListener('input', () => {
+      qualityValue.textContent = parseFloat(qualitySlider.value).toFixed(2);
+    });
+
+    // Select buttons
+    selectFilesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+    selectFolderBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      folderInput.click();
+    });
+
+    // Drag & Drop
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drop-active');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drop-active'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drop-active');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+      fileInput.value = ''; // allow selecting same files again
+    });
+    folderInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+      folderInput.value = '';
+    });
+
+    function handleFiles(fileList) {
+      const imageFiles = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+      if (imageFiles.length === 0) {
+        alert('Please select image files only (JPG, PNG, WebP, etc.)');
+        return;
+      }
+
+      if (items.length + imageFiles.length > 400) {
+        if (!confirm(`You are about to add ${imageFiles.length} images (total: ${items.length + imageFiles.length}). Extremely large batches may slow down or crash the browser. Continue?`)) {
+          return;
+        }
+      }
+
+      imageFiles.forEach(file => {
+        items.push({
+          id: Date.now() + Math.random().toString(36).slice(2),
+          file,
+          selected: true,
+          compressedBlob: null,
+          newName: null,
+          originalSize: file.size,
+          newSize: null,
+          saved: null,
+          status: 'ready'
+        });
+      });
+
+      actionBar.style.display = 'flex';
+      renderList();
+      updateSummary();
+    }
+
+    function renderList() {
+      resultsDiv.innerHTML = '';
+
+      items.forEach((item) => {
+        const sizeMB = (item.originalSize / (1024 * 1024)).toFixed(2);
+        const card = document.createElement('div');
+        card.className = `file-card bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-3 cursor-pointer select-none ${item.selected ? 'selected' : ''}`;
+        card.dataset.id = item.id;
+
+        let statusHtml = '';
+        if (item.status === 'ready') {
+          statusHtml = `<span class="text-slate-500 text-sm">Ready</span>`;
+        } else if (item.status === 'compressing') {
+          statusHtml = `<span class="text-yellow-400 text-sm">Compressing...</span>`;
+        } else if (item.status === 'done') {
+          statusHtml = `
+            <div class="text-right text-sm">
+              <span class="text-emerald-400 font-medium">${(item.newSize / (1024*1024)).toFixed(2)} MB</span>
+              <span class="text-slate-500"> (−${item.saved}%)</span>
+            </div>
+          `;
+        } else if (item.status === 'error') {
+          statusHtml = `<span class="text-red-400 text-sm">Error</span>`;
+        }
+
+        card.innerHTML = `
+          <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors
+                      ${item.selected ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}">
+            ${item.selected ? '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' : ''}
+          </div>
+          
+          <div class="w-12 h-12 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0">
+            <img src="${URL.createObjectURL(item.file)}" class="w-full h-full object-cover" alt="" loading="lazy">
+          </div>
+          
+          <div class="flex-1 min-w-0">
+            <p class="font-medium truncate text-sm">${item.file.name}</p>
+            <p class="text-xs text-slate-500">${sizeMB} MB</p>
+          </div>
+          
+          <div class="flex items-center gap-2 flex-shrink-0">
+            ${statusHtml}
+            ${item.status === 'done' ? `
+              <button class="download-one bg-slate-700 hover:bg-slate-600 text-xs px-2 py-1 rounded" data-id="${item.id}" title="Download">
+                ↓
+              </button>
+            ` : ''}
+          </div>
+        `;
+
+        resultsDiv.appendChild(card);
+
+        // Whole card is tappable (phone-like multi-select)
+        card.addEventListener('click', (e) => {
+          // Don't toggle if clicking the download button
+          if (e.target.closest('.download-one')) return;
+
+          const item = items.find(i => i.id === card.dataset.id);
+          if (item) {
+            item.selected = !item.selected;
+            renderList();
+            updateSummary();
+          }
+        });
+      });
+
+      document.querySelectorAll('.download-one').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = e.currentTarget.dataset.id;
+          const item = items.find(i => i.id === id);
+          if (item && item.compressedBlob) {
+            saveAs(item.compressedBlob, item.newName);
+          }
+        });
+      });
+    }
+
+    function updateSummary() {
+      const total = items.length;
+      const selected = items.filter(i => i.selected).length;
+      const done = items.filter(i => i.status === 'done').length;
+      summary.textContent = `${selected}/${total} selected` + (done > 0 ? ` • ${done} compressed` : '');
+    }
+
+    selectAllBtn.addEventListener('click', () => {
+      items.forEach(i => i.selected = true);
+      renderList();
+      updateSummary();
+    });
+
+    deselectAllBtn.addEventListener('click', () => {
+      items.forEach(i => i.selected = false);
+      renderList();
+      updateSummary();
+    });
+
+    compressBtn.addEventListener('click', async () => {
+      const selectedItems = items.filter(i => i.selected);
+      if (selectedItems.length === 0) {
+        alert('Please select at least one image to compress.');
+        return;
+      }
+
+      compressBtn.disabled = true;
+      compressBtn.innerHTML = 'Compressing...';
+      progressContainer.classList.remove('hidden');
+      downloadZipBtn.classList.add('hidden');
+      downloadJpegBtn.classList.add('hidden');
+
+      const quality = parseFloat(qualitySlider.value);
+      const maxWidth = parseInt(maxWidthSelect.value) || undefined;
+      const format = outputFormatSelect.value;
+
+      let totalOriginal = 0;
+      let totalCompressed = 0;
+      let processed = 0;
+
+      for (const item of selectedItems) {
+        item.status = 'compressing';
+        renderList();
+
+        progressText.textContent = `Processing ${processed + 1} of ${selectedItems.length}: ${item.file.name}`;
+        const percent = Math.round((processed / selectedItems.length) * 100);
+        progressBar.style.width = percent + '%';
+        progressPercent.textContent = percent + '%';
+
+        try {
+          const options = {
+            maxSizeMB: 80,
+            maxWidthOrHeight: maxWidth || undefined,
+            useWebWorker: true,
+            initialQuality: quality,
+          };
+
+          if (format === 'webp') options.fileType = 'image/webp';
+          else if (format === 'jpeg') options.fileType = 'image/jpeg';
+          else if (format === 'png') options.fileType = 'image/png';
+
+          const compressed = await imageCompression(item.file, options);
+
+          item.compressedBlob = compressed;
+          item.newSize = compressed.size;
+          item.saved = ((1 - compressed.size / item.originalSize) * 100).toFixed(1);
+          item.newName = getNewName(item.file.name, format, compressed.type);
+          item.status = 'done';
+
+          totalOriginal += item.originalSize;
+          totalCompressed += compressed.size;
+        } catch (err) {
+          console.error(err);
+          item.status = 'error';
+        }
+
+        processed++;
+        updateSummary();
+      }
+
+      progressBar.style.width = '100%';
+      progressPercent.textContent = '100%';
+      progressText.textContent = 'Complete';
+
+      if (totalOriginal > 0) {
+        const totalSaved = ((1 - totalCompressed / totalOriginal) * 100).toFixed(1);
+        summary.innerHTML = `
+          <span class="text-emerald-400 font-medium">${selectedItems.length} compressed</span> • 
+          ${(totalOriginal/(1024*1024)).toFixed(1)} → ${(totalCompressed/(1024*1024)).toFixed(1)} MB 
+          <span class="text-emerald-400">(−${totalSaved}%)</span>
+        `;
+      }
+
+      downloadZipBtn.classList.remove('hidden');
+      downloadJpegBtn.classList.remove('hidden');
+      compressBtn.disabled = false;
+      compressBtn.innerHTML = 'Compress Selected';
+      renderList();
+    });
+
+    function getNewName(originalName, format, mime) {
+      const base = originalName.replace(/\.[^/.]+$/, '');
+      let ext = 'jpg';
+      if (format === 'webp' || mime === 'image/webp') ext = 'webp';
+      else if (format === 'png' || mime === 'image/png') ext = 'png';
+      else if (format === 'jpeg' || mime === 'image/jpeg') ext = 'jpg';
+      else {
+        const match = originalName.match(/\.([^.]+)$/);
+        if (match) ext = match[1].toLowerCase();
+      }
+      return `${base}_compressed.${ext}`;
+    }
+
+    downloadZipBtn.addEventListener('click', async () => {
+      const toDownload = items.filter(i => i.selected && i.compressedBlob);
+      if (toDownload.length === 0) {
+        alert('Please compress and select images first.');
+        return;
+      }
+
+      downloadZipBtn.disabled = true;
+      downloadZipBtn.textContent = 'Creating ZIP...';
+
+      const zip = new JSZip();
+      toDownload.forEach(item => {
+        zip.file(item.newName, item.compressedBlob);
+      });
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `compressed_${toDownload.length}_images_${Date.now()}.zip`);
+
+      downloadZipBtn.disabled = false;
+      downloadZipBtn.textContent = 'Download ZIP';
+    });
+
+    downloadJpegBtn.addEventListener('click', async () => {
+      const toDownload = items.filter(i => i.selected && i.compressedBlob);
+      if (toDownload.length === 0) {
+        alert('Please compress and select images first.');
+        return;
+      }
+
+      if (toDownload.length > 20) {
+        if (!confirm(`${toDownload.length} files will be downloaded individually. Your browser may block multiple downloads. Using ZIP is recommended. Continue anyway?`)) {
+          return;
+        }
+      }
+
+      downloadJpegBtn.disabled = true;
+      downloadJpegBtn.textContent = 'Downloading...';
+
+      for (let i = 0; i < toDownload.length; i++) {
+        const item = toDownload[i];
+        const jpegName = item.newName.replace(/\.(webp|png)$/i, '.jpg');
+        saveAs(item.compressedBlob, jpegName);
+        
+        if (i < toDownload.length - 1) {
+          await new Promise(r => setTimeout(r, 400));
+        }
+      }
+
+      downloadJpegBtn.disabled = false;
+      downloadJpegBtn.textContent = 'Download as JPEG';
+    });
+
+    clearBtn.addEventListener('click', () => {
+      if (items.length > 0 && !confirm('Clear all images from the list?')) return;
+      items = [];
+      resultsDiv.innerHTML = '';
+      actionBar.style.display = 'none';
+      progressContainer.classList.add('hidden');
+      fileInput.value = '';
+      summary.textContent = '';
+      downloadZipBtn.classList.add('hidden');
+      downloadJpegBtn.classList.add('hidden');
+    });
+  </script>
+</body>
+</html>
